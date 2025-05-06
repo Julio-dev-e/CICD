@@ -1,0 +1,11 @@
+pipeline{
+    agent any
+
+    stage{
+        stage('docker build') {
+            steps {
+                sh "docker build -f  -t cao"
+            }
+        }
+        }
+}
