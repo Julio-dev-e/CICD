@@ -1,0 +1,86 @@
+pipeline {
+    agent any
+
+    tools {
+        maven 'Maven 3.9.9'   // Nombre tal como aparece en Jenkins
+        jdk 'jdk'             // Nombre tal como aparece en Jenkins (asegúrate que 'jdk' coincida con el nombre de tu instalación)
+        nodejs 'njs'          // Este es el nombre que configuraste para Node.js
+    }
+
+    environment {
+        JAVA_HOME = "${tool 'jdk'}"  // Aquí debe estar correctamente configurado el JDK
+        PATH = "${env.JAVA_HOME}/bin:${tool 'njs'}/bin:${env.PATH}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git url: 'https://github.com/Julio-dev-e/CICD.git', branch: 'main'
+            }
+        }
+
+        stage('Verificar JAVA_HOME') {
+            steps {
+                // Verificar que el JAVA_HOME esté bien configurado y la versión de Java
+                sh 'echo $JAVA_HOME'    // Esto debería mostrar la ruta del JDK
+                sh 'java -version'      // Esto debería mostrar la versión de Java que está usando Jenkins
+            }
+        }
+
+        stage('Build Backend') {
+            steps {
+                dir('Back-End') {
+                    sh 'mvn clean install'
+                }
+            }
+        }
+
+        stage('Build Frontend') {
+            steps {
+                dir('Front-End') {
+                    sh 'npm install'
+                    sh 'npm run build'
+                }
+            }
+        }
+
+        stage('Code Analysis') {
+            steps {
+                echo 'Análisis de código (pendiente de configuración de SonarQube o similar)'
+            }
+        }
+
+        stage('Archive Artifacts') {
+            steps {
+                archiveArtifacts artifacts: 'Back-End/target/*.jar', fingerprint: true
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                echo 'Construcción de imagen Docker (añade comandos si es necesario)'
+            }
+        }
+
+        stage('Docker Push') {
+            steps {
+                echo 'Subida a Docker Hub o Nexus (añade autenticación y push si lo necesitas)'
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                echo 'Despliegue (simulado o real, dependiendo de tu entorno)'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Pipeline completado con éxito'
+        }
+        failure {
+            echo 'Pipeline fallido'
+        }
+    }
+}
