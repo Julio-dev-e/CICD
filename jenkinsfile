@@ -53,18 +53,21 @@ pipeline {
                         }
                     }
 
-                    // Análisis del Frontend con sonar-scanner descargado localmente
-                    dir('Front-End') {
-                        sh '''
-                            curl -sSLo sonar.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-                            unzip -qo sonar.zip
-                            export PATH=$PWD/sonar-scanner-5.0.1.3006-linux/bin:$PATH
-                            sonar-scanner \
-                                -Dsonar.projectKey=nombre-del-proyecto-frontend \
-                                -Dsonar.host.url=${SONARQUBE_URL} \
-                                -Dsonar.login=${SONARQUBE_TOKEN}
-                            rm -rf sonar.zip sonar-scanner-5.0.1.3006-linux
-                        '''
+                    // Análisis del Frontend con sonar-scanner descargado y ejecutado correctamente
+                    withSonarQubeEnv('SonarQube') {
+                        dir('Front-End') {
+                            sh '''
+                                curl -sSLo sonar.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+                                unzip -qo sonar.zip
+                                chmod +x sonar-scanner-*/bin/sonar-scanner
+                                ./sonar-scanner-*/bin/sonar-scanner \
+                                    -Dsonar.projectKey=nombre-del-proyecto-frontend \
+                                    -Dsonar.sources=. \
+                                    -Dsonar.host.url=${SONARQUBE_URL} \
+                                    -Dsonar.login=${SONARQUBE_TOKEN}
+                                rm -rf sonar.zip sonar-scanner-*/
+                            '''
+                        }
                     }
                 }
             }
