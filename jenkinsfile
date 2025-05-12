@@ -2,28 +2,22 @@ pipeline {
     agent any
 
     tools {
-        maven 'Maven 3.9.9'   // Nombre tal como aparece en Jenkins
-        jdk 'jdk'             // Nombre tal como aparece en Jenkins (asegúrate que 'jdk' coincida con el nombre de tu instalación)
-        nodejs 'njs'          // Este es el nombre que configuraste para Node.js
+        maven 'Maven 3.9.9'
+        jdk 'jdk'
+        nodejs 'njs'
     }
 
     environment {
-        JAVA_HOME = "${tool 'jdk'}"  // Aquí debe estar correctamente configurado el JDK
-        PATH = "${env.JAVA_HOME}/bin:${tool 'njs'}/bin:${env.PATH}"
+        JAVA_HOME = "${tool 'jdk'}"
+        PATH = "${tool 'njs'}/bin:${env.JAVA_HOME}/bin:${env.PATH}"
+        SONARQUBE_URL = 'http://172.18.0.3:9000'
+        SONARQUBE_TOKEN = credentials('sonar-token')
     }
 
     stages {
         stage('Checkout') {
             steps {
                 git url: 'https://github.com/Julio-dev-e/CICD.git', branch: 'main'
-            }
-        }
-
-        stage('Verificar JAVA_HOME') {
-            steps {
-                // Verificar que el JAVA_HOME esté bien configurado y la versión de Java
-                sh 'echo $JAVA_HOME'    // Esto debería mostrar la ruta del JDK
-                sh 'java -version'      // Esto debería mostrar la versión de Java que está usando Jenkins
             }
         }
 
@@ -46,7 +40,33 @@ pipeline {
 
         stage('Code Analysis') {
             steps {
-                echo 'Análisis de código (pendiente de configuración de SonarQube o similar)'
+                script {
+                    // Análisis del Backend con Maven y SonarQube
+                    withSonarQubeEnv('SonarQube') {
+                        dir('Back-End') {
+                            sh '''
+                                mvn sonar:sonar \
+                                -Dsonar.projectKey=nombre-del-proyecto-backend \
+                                -Dsonar.host.url=${SONARQUBE_URL} \
+                                -Dsonar.login=${SONARQUBE_TOKEN}
+                            '''
+                        }
+                    }
+
+                    // Análisis del Frontend con instalación temporal de sonar-scanner
+                    dir('Front-End') {
+                        sh '''
+                            apt-get update && apt-get install -y unzip curl
+                            curl -sSLo sonar.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+                            unzip -q sonar.zip
+                            chmod +x sonar-scanner-*/bin/sonar-scanner
+                            ./sonar-scanner-*/bin/sonar-scanner \
+                                -Dsonar.projectKey=nombre-del-proyecto-frontend \
+                                -Dsonar.host.url=${SONARQUBE_URL} \
+                                -Dsonar.login=${SONARQUBE_TOKEN}
+                        '''
+                    }
+                }
             }
         }
 
@@ -58,19 +78,19 @@ pipeline {
 
         stage('Docker Build') {
             steps {
-                echo 'Construcción de imagen Docker (añade comandos si es necesario)'
+                echo 'Construcción de imagen Docker'
             }
         }
 
         stage('Docker Push') {
             steps {
-                echo 'Subida a Docker Hub o Nexus (añade autenticación y push si lo necesitas)'
+                echo 'Subida a Docker Hub o Nexus'
             }
         }
 
         stage('Deploy') {
             steps {
-                echo 'Despliegue (simulado o real, dependiendo de tu entorno)'
+                echo 'Despliegue'
             }
         }
     }
@@ -81,6 +101,6 @@ pipeline {
         }
         failure {
             echo 'Pipeline fallido'
-       }
+        }
     }
 }
