@@ -119,6 +119,34 @@ pipeline {
                 }
             }
         }
+        
+        stage('Upload Frontend to Nexus') {
+    steps {
+        dir('Front-End') {
+            script {
+                if (fileExists(env.ARTIFACT_PATH)) {
+                    nexusArtifactUploader(
+                        nexusVersion: 'nexus3',
+                        protocol: 'http',
+                        nexusUrl: 'http://nexus:8081',
+                        groupId: env.GROUP_ID,
+                        version: env.VERSION,
+                        repository: 'maven-releases', // Cambia si usas un repo tipo raw
+                        credentialsId: 'NexusUserCreds',
+                        artifacts: [[
+                            artifactId: env.ARTIFACT_ID,
+                            classifier: '',
+                            file: env.ARTIFACT_PATH,
+                            type: env.PACKAGING
+                        ]]
+                    )
+                } else {
+                    error "El archivo frontend zip no fue encontrado: ${env.ARTIFACT_PATH}"
+                }
+            }
+        }
+    }
+}
 
         stage('Docker Build') {
             steps {
@@ -161,3 +189,4 @@ pipeline {
         }
     }
 }
+
