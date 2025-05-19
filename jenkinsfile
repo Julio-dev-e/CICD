@@ -12,12 +12,29 @@ pipeline {
         PATH = "${tool 'njs'}/bin:${env.JAVA_HOME}/bin:${env.PATH}"
         SONARQUBE_URL = 'http://172.18.0.3:9000'
         SONARQUBE_TOKEN = credentials('sonar-token')
+        DOCKER_IMAGE = 'julio/app-init'
+        DOCKER_TAG = 'latest'
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 git url: 'https://github.com/Julio-dev-e/CICD.git', branch: 'main'
+            }
+        }
+
+        stage('Extract Maven Info') {
+            steps {
+                dir('Back-End') {
+                    script {
+                        env.GROUP_ID    = sh(script: "mvn help:evaluate -Dexpression=project.groupId -q -DforceStdout", returnStdout: true).trim()
+                        env.ARTIFACT_ID = sh(script: "mvn help:evaluate -Dexpression=project.artifactId -q -DforceStdout", returnStdout: true).trim()
+                        env.VERSION     = sh(script: "mvn help:evaluate -Dexpression=project.version -q -DforceStdout", returnStdout: true).trim()
+                        env.PACKAGING   = sh(script: "mvn help:evaluate -Dexpression=project.packaging -q -DforceStdout", returnStdout: true).trim()
+                        env.ARTIFACT_PATH = "target/${env.ARTIFACT_ID}-${env.VERSION}.${env.PACKAGING}"
+                    }
+                }
             }
         }
 
@@ -41,32 +58,28 @@ pipeline {
         stage('Code Analysis') {
             steps {
                 script {
-                    // Análisis del Backend con Maven y SonarQube
-                    withSonarQubeEnv('SonarQube') {
+                    withSonarQubeEnv('sonarqube') {
                         dir('Back-End') {
-                            sh '''
+                            sh """
                                 mvn sonar:sonar \
-                                -Dsonar.projectKey=nombre-del-proyecto-backend \
+                                -Dsonar.projectKey=${env.ARTIFACT_ID}-backend \
                                 -Dsonar.host.url=${SONARQUBE_URL} \
                                 -Dsonar.login=${SONARQUBE_TOKEN}
-                            '''
+                            """
                         }
-                    }
 
-                    // Análisis del Frontend con sonar-scanner descargado y ejecutado correctamente
-                    withSonarQubeEnv('SonarQube') {
                         dir('Front-End') {
-                            sh '''
+                            sh """
                                 curl -sSLo sonar.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
                                 unzip -qo sonar.zip
                                 chmod +x sonar-scanner-*/bin/sonar-scanner
                                 ./sonar-scanner-*/bin/sonar-scanner \
-                                    -Dsonar.projectKey=nombre-del-proyecto-frontend \
+                                    -Dsonar.projectKey=${env.ARTIFACT_ID}-frontend \
                                     -Dsonar.sources=. \
                                     -Dsonar.host.url=${SONARQUBE_URL} \
                                     -Dsonar.login=${SONARQUBE_TOKEN}
                                 rm -rf sonar.zip sonar-scanner-*/
-                            '''
+                            """
                         }
                     }
                 }
@@ -79,31 +92,72 @@ pipeline {
             }
         }
 
+        stage('Upload to Nexus') {
+            steps {
+                dir('Back-End') {
+                    script {
+                        if (fileExists(env.ARTIFACT_PATH)) {
+                            nexusArtifactUploader(
+                                nexusVersion: 'nexus3',
+                                protocol: 'http',
+                                nexusUrl: 'nexus:8081',
+                                groupId: env.GROUP_ID,
+                                version: env.VERSION,
+                                repository: 'maven-snapshots',
+                                credentialsId: 'NexusUserCreds',
+                                artifacts: [[
+                                    artifactId: env.ARTIFACT_ID,
+                                    classifier: '',
+                                    file: env.ARTIFACT_PATH,
+                                    type: env.PACKAGING
+                                ]]
+                            )
+                        } else {
+                            error "El artefacto no fue encontrado: ${env.ARTIFACT_PATH}"
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Docker Build') {
             steps {
-                echo 'Construcción de imagen Docker'
+                dir('Back-End') {
+                    sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
+                }
             }
         }
 
         stage('Docker Push') {
             steps {
-                echo 'Subida a Docker Hub o Nexus'
+                withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh """
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+                        docker logout
+                    """
+                }
             }
         }
 
         stage('Deploy') {
             steps {
-                echo 'Despliegue'
+                echo 'Desplegando contenedor...'
+                sh """
+                    docker stop app-init || true
+                    docker rm app-init || true
+                    docker run -d --name app-init -p 8080:8080 ${DOCKER_IMAGE}:${DOCKER_TAG}
+                """
             }
         }
     }
 
     post {
         success {
-            echo 'Pipeline completado con éxito'
+            echo ' Pipeline completado con éxito'
         }
         failure {
-            echo 'Pipeline fallido'
+            echo ' Pipeline fallido'
         }
     }
 }
