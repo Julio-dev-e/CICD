@@ -14,6 +14,12 @@ pipeline {
         SONARQUBE_TOKEN = credentials('sonar-token')
         DOCKER_IMAGE = 'julio/app-init'
         DOCKER_TAG = 'latest'
+
+        FRONTEND_ARTIFACT_PATH = 'Front-End/frontend.tar.gz'
+        FRONTEND_ARTIFACT_ID = 'issuetracking-frontend'
+        FRONTEND_GROUP_ID = 'com.ismail.frontend'
+        FRONTEND_VERSION = '0.0.1'
+        FRONTEND_PACKAGING = 'tar.gz'
     }
 
     stages {
@@ -92,7 +98,7 @@ pipeline {
             }
         }
 
-        stage('Upload to Nexus') {
+        stage('Upload Backend to Nexus') {
             steps {
                 dir('Back-End') {
                     script {
@@ -119,34 +125,32 @@ pipeline {
                 }
             }
         }
-        
-        stage('Upload Frontend to Nexus') {
-    steps {
-        dir('Front-End') {
-            script {
-                if (fileExists(env.ARTIFACT_PATH)) {
-                    nexusArtifactUploader(
-                        nexusVersion: 'nexus3',
-                        protocol: 'http',
-                        nexusUrl: 'http://nexus:8081',
-                        groupId: env.GROUP_ID,
-                        version: env.VERSION,
-                        repository: 'maven-releases', // Cambia si usas un repo tipo raw
-                        credentialsId: 'NexusUserCreds',
-                        artifacts: [[
-                            artifactId: env.ARTIFACT_ID,
-                            classifier: '',
-                            file: env.ARTIFACT_PATH,
-                            type: env.PACKAGING
-                        ]]
-                    )
-                } else {
-                    error "El archivo frontend zip no fue encontrado: ${env.ARTIFACT_PATH}"
+
+        // 🔧 MODIFICADO: Publicación frontend sin campo "private" y sin interpolación insegura
+        stage('Publish Frontend to Nexus (npm)') {
+            steps {
+                dir('Front-End') {
+                    withCredentials([usernamePassword(credentialsId: 'NexusUserCreds', usernameVariable: 'NPM_USER', passwordVariable: 'NPM_PASS')]) {
+                        script {
+                            sh '''
+                                # Eliminar campo "private" del package.json
+                                jq 'del(.private)' package.json > tmp.json && mv tmp.json package.json
+
+                                # Crear archivo de configuración .npmrc
+                                echo "//nexus:8081/repository/front-repo/:username=${NPM_USER}" > ~/.npmrc
+                                echo "//nexus:8081/repository/front-repo/:_password=$(echo -n $NPM_PASS | base64)" >> ~/.npmrc
+                                echo "//nexus:8081/repository/front-repo/:email=admin@example.com" >> ~/.npmrc
+                                echo "//nexus:8081/repository/front-repo/:always-auth=true" >> ~/.npmrc
+
+                                # Establecer el registro y publicar
+                                npm config set registry http://nexus:8081/repository/front-repo/
+                                npm publish --registry=http://nexus:8081/repository/front-repo/
+                            '''
+                        }
+                    }
                 }
             }
         }
-    }
-}
 
         stage('Docker Build') {
             steps {
@@ -189,4 +193,3 @@ pipeline {
         }
     }
 }
-
